@@ -1,4 +1,4 @@
-name: Fast Multi-threaded Build OmniRoute Binary (Linux)
+name: Universal Multi-threaded Build OmniRoute Binary (Linux)
 
 on:
   push:
@@ -12,8 +12,8 @@ concurrency:
 
 jobs:
   build:
-    name: Build Linux Binary (With Swap & Anti-OOM)
-    runs-on: ubuntu-latest
+    name: Build Universal Linux Binary
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repository
@@ -31,7 +31,7 @@ jobs:
           echo "=== Memori & Swap Berhasil Ditambahkan ==="
           free -h
 
-      # 2. Setup Node.js 24 untuk Environment Build
+      # 2. Setup Node.js 24 + Otomatis Cache NPM via setup-node
       - name: Setup Node.js (v24)
         uses: actions/setup-node@v4
         with:
@@ -44,16 +44,19 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq pigz
 
-      # 4. Cache Next.js (.build/next/cache) & NPM
-      - name: Restore Next.js Build Cache
+      # 4. OPTIMIZED CACHE STRATEGY (Next.js, SWC/Compiler, & PKG Cache)
+      - name: Cache Next.js Build & PKG Runtimes
         uses: actions/cache@v4
         with:
           path: |
-            ~/.npm
             .build/next/cache
-          key: ${{ runner.os }}-omniroute-node24-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**.[jt]s', '**.[jt]sx', '**/*.mjs') }}
+            node_modules/.cache
+            ~/.pkg-cache
+          # github.sha memastikan cache SELALU ter-update & disimpan di setiap run
+          key: ${{ runner.os }}-omniroute-build-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-omniroute-node24-
+            ${{ runner.os }}-omniroute-build-${{ hashFiles('**/package-lock.json') }}-
+            ${{ runner.os }}-omniroute-build-
 
       # 5. Fast Install Dependencies
       - name: Install Dependencies
@@ -81,14 +84,12 @@ jobs:
       # 8. Compile Standalone Server (Jalur: .build/next/standalone)
       - name: Compile Standalone Server to Binary
         run: |
-          # Verifikasi keberadaan file server.js di .build/next/standalone
           if [ ! -f ".build/next/standalone/server.js" ]; then
             echo "::error:: File .build/next/standalone/server.js tidak ditemukan!"
             ls -la .build/next/ || true
             exit 1
           fi
 
-          # Salin folder public dan static assets ke dalam folder standalone
           if [ -d "public" ]; then
             cp -r public .build/next/standalone/
           fi
@@ -100,7 +101,6 @@ jobs:
             cp -r .build/next/static .build/next/standalone/.next/
           fi
 
-          # Kompilasi dari dalam folder .build/next/standalone ke folder dist
           cd .build/next/standalone
           pkg server.js --targets node20-linux-x64 --output ../../../dist/omniroute-linux
 
