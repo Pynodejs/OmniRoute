@@ -1,0 +1,56 @@
+name: Build OmniRoute Binary (Linux)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Linux Binary
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Next.js App
+        run: npm run build
+
+      - name: Copy Static Assets to Standalone
+        run: |
+          cp -r public .next/standalone/public
+          cp -r .next/static .next/standalone/.next/static
+
+      - name: Install PKG
+        run: npm install -g @yao-pkg/pkg
+
+      - name: Compile to Linux Binary
+        run: |
+          cd .next/standalone
+          pkg server.js --targets node20-linux-x64 --output ../../dist/omniroute-linux
+
+      - name: Package Binary with Assets (.tar.gz)
+        run: |
+          mkdir -p dist/public dist/.next
+          cp -r public dist/
+          cp -r .next/static dist/.next/
+
+          cd dist
+          tar -czvf ../omniroute-linux-x64.tar.gz omniroute-linux public .next
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omniroute-linux-x64
+          path: omniroute-linux-x64.tar.gz
+          retention-days: 7
