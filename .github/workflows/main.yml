@@ -1,4 +1,4 @@
-name: Build OmniRoute Binary (Linux)
+name: Fast Multi-threaded Build OmniRoute Binary (Linux)
 
 on:
   push:
@@ -6,57 +6,95 @@ on:
       - 'release/v3.8.50'
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    name: Build Linux Binary
+    name: Build Linux Binary (Multi-thread & Max RAM)
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Native Build Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential python3 libsecret-1-dev
-
       - name: Setup Node.js (v22)
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22'
           cache: 'npm'
 
+      # 1. Install pigz (Multi-threaded Gzip)
+      - name: Install Parallel Tools (pigz)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq pigz
+
+      # 2. Cache Next.js & NPM
+      - name: Restore Next.js Build Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            .next/cache
+          key: ${{ runner.os }}-omniroute-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**.[jt]s', '**.[jt]sx', '**/*.mjs') }}
+          restore-keys: |
+            ${{ runner.os }}-omniroute-${{ hashFiles('**/package-lock.json') }}-
+            ${{ runner.os }}-omniroute-
+
+      # 3. Fast Install
       - name: Install Dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit
 
+      # 4. Multi-threaded & Dynamic RAM Build
       - name: Build OmniRoute Release
-        run: npm run build:release
+        run: |
+          # Hitung RAM aman (Total Memori dikurangi 1024 MB untuk OS)
+          TOTAL_RAM_MB=$(free -m | awk '/Mem:/ {print $2}')
+          SAFE_MAX_OLD_SPACE=$((TOTAL_RAM_MB - 1024))
+          
+          # Hitung jumlah CPU core
+          CPU_CORES=$(nproc)
+          
+          echo "RAM terdeteksi: ${TOTAL_RAM_MB}MB | Mengalokasikan Heap Node.js: ${SAFE_MAX_OLD_SPACE}MB"
+          echo "CPU Cores terdeteksi: ${CPU_CORES}"
+          
+          export NODE_OPTIONS="--max-old-space-size=${SAFE_MAX_OLD_SPACE}"
+          export UV_THREADPOOL_SIZE=${CPU_CORES}
+          export NEXT_TELEMETRY_DISABLED=1
+          
+          npm run build:release
 
+      # 5. Install PKG
       - name: Install PKG
-        run: npm install -g @yao-pkg/pkg
+        run: npm install -g @yao-pkg/pkg --prefer-offline
 
+      # 6. Compile Standalone Server
       - name: Compile Standalone Server to Binary
         run: |
-          # Menyalin asset statis ke folder standalone Next.js
           cp -r public .next/standalone/public
           cp -r .next/static .next/standalone/.next/static
           
-          # Compile standalone server.js
           cd .next/standalone
           pkg server.js --targets node22-linux-x64 --output ../../dist/omniroute-linux
 
-      - name: Package Binary & Assets (.tar.gz)
+      # 7. Multi-threaded Tar Compression (Pakai pigz)
+      - name: Package Binary & Assets (Ultra-Fast Parallel Tar)
         run: |
           mkdir -p dist/public dist/.next
           cp -r public dist/
           cp -r .next/static dist/.next/
 
           cd dist
-          tar -czvf ../omniroute-linux-v3.8.50.tar.gz omniroute-linux public .next
+          # -I pigz memanfaatkan seluruh thread CPU untuk kompresi
+          tar -I pigz -cf ../omniroute-linux-v3.8.50.tar.gz omniroute-linux public .next
 
+      # 8. Upload Artifact
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
           name: omniroute-linux-v3.8.50
           path: omniroute-linux-v3.8.50.tar.gz
+          compression-level: 0
           retention-days: 14
