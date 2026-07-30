@@ -12,27 +12,37 @@ concurrency:
 
 jobs:
   build:
-    name: Build Linux Binary (Node 24 - 8GB RAM)
+    name: Build Linux Binary (With Swap & Anti-OOM)
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. Setup Node.js 24
+      # 1. TAMBAH SWAP SPACE 8GB (Mencegah Process Killed / OOM)
+      - name: Increase Swap Space
+        run: |
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo "=== Memori & Swap Aktif ==="
+          free -h
+
+      # 2. Setup Node.js 24 untuk Environment Build
       - name: Setup Node.js (v24)
         uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'npm'
 
-      # 2. Install Parallel Tools (pigz)
+      # 3. Install Parallel Tools (pigz)
       - name: Install Parallel Tools (pigz)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq pigz
 
-      # 3. Cache Next.js & NPM
+      # 4. Cache Next.js & NPM
       - name: Restore Next.js Build Cache
         uses: actions/cache@v4
         with:
@@ -41,43 +51,43 @@ jobs:
             .next/cache
           key: ${{ runner.os }}-omniroute-node24-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**.[jt]s', '**.[jt]sx', '**/*.mjs') }}
           restore-keys: |
-            ${{ runner.os }}-omniroute-node24-${{ hashFiles('**/package-lock.json') }}-
             ${{ runner.os }}-omniroute-node24-
 
-      # 4. Fast Install
+      # 5. Fast Install Dependencies
       - name: Install Dependencies
         run: npm ci --prefer-offline --no-audit
 
-      # 5. Build OmniRoute dengan Alokasi RAM 8GB (8192 MB)
+      # 6. Build OmniRoute Release (Alokasi 6GB Heap + Swap)
       - name: Build OmniRoute Release
         run: |
           CPU_CORES=$(nproc)
           
           echo "Node version: $(node -v)"
-          echo "Alokasi RAM Heap Node.js: 8192 MB (8GB)"
+          echo "Alokasi Heap Node.js: 6144 MB (6GB) + 8GB Swap"
           echo "CPU Cores terdeteksi: ${CPU_CORES}"
           
-          export NODE_OPTIONS="--max-old-space-size=8192"
+          export NODE_OPTIONS="--max-old-space-size=6144"
           export UV_THREADPOOL_SIZE=${CPU_CORES}
           export NEXT_TELEMETRY_DISABLED=1
           
           npm run build:release
 
-      # 6. Install PKG
+      # 7. Install PKG
       - name: Install PKG
         run: npm install -g @yao-pkg/pkg --prefer-offline
 
-      # 7. Compile Standalone Server (Target Node 24)
+      # 8. Compile Standalone Server (Pakai Prebuilt Target Node 20)
       - name: Compile Standalone Server to Binary
         run: |
           cp -r public .next/standalone/public
           cp -r .next/static .next/standalone/.next/static
           
           cd .next/standalone
-          pkg server.js --targets node24-linux-x64 --output ../../dist/omniroute-linux
+          # target node20 digunakan agar PKG memakai prebuilt binary instan tanpa compile C++
+          pkg server.js --targets node20-linux-x64 --output ../../dist/omniroute-linux
 
-      # 8. Multi-threaded Tar Compression (pigz)
-      - name: Package Binary & Assets (Parallel Tar)
+      # 9. Multi-threaded Tar Compression (pigz)
+      - name: Package Binary & Assets
         run: |
           mkdir -p dist/public dist/.next
           cp -r public dist/
@@ -86,7 +96,7 @@ jobs:
           cd dist
           tar -I pigz -cf ../omniroute-linux-v3.8.50.tar.gz omniroute-linux public .next
 
-      # 9. Upload Artifact
+      # 10. Upload Artifact
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
