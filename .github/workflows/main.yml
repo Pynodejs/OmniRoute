@@ -19,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. Tambah Swap Space 8GB
+      # 1. Tambah Swap Space 8GB (Mencegah Process Killed / OOM)
       - name: Increase Swap Space
         run: |
           sudo swapoff /swapfile_extra 2>/dev/null || true
@@ -44,13 +44,13 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq pigz
 
-      # 4. Cache Next.js & NPM
+      # 4. Cache Next.js (.build/next/cache) & NPM
       - name: Restore Next.js Build Cache
         uses: actions/cache@v4
         with:
           path: |
             ~/.npm
-            .next/cache
+            .build/next/cache
           key: ${{ runner.os }}-omniroute-node24-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**.[jt]s', '**.[jt]sx', '**/*.mjs') }}
           restore-keys: |
             ${{ runner.os }}-omniroute-node24-
@@ -78,41 +78,44 @@ jobs:
       - name: Install PKG
         run: npm install -g @yao-pkg/pkg --prefer-offline
 
-      # 8. Compile Standalone Server (Aman & Terstruktur)
+      # 8. Compile Standalone Server (Jalur: .build/next/standalone)
       - name: Compile Standalone Server to Binary
         run: |
-          # Buat direktori standalone terlebih dahulu
-          mkdir -p .next/standalone
-          
-          # Salin public dan .next/static secara aman jika ada
-          if [ -d "public" ]; then
-            cp -r public .next/standalone/
-          fi
-          
-          if [ -d ".next/static" ]; then
-            mkdir -p .next/standalone/.next
-            cp -r .next/static .next/standalone/.next/
-          fi
-
-          # Verifikasi apakah server.js berhasil dibentuk oleh Next.js
-          if [ ! -f ".next/standalone/server.js" ]; then
-            echo "::error:: File .next/standalone/server.js tidak ditemukan!"
-            echo "Pastikan next.config.js / next.config.mjs di repo sudah memiliki opsi: output: 'standalone'"
+          # Verifikasi keberadaan file server.js di .build/next/standalone
+          if [ ! -f ".build/next/standalone/server.js" ]; then
+            echo "::error:: File .build/next/standalone/server.js tidak ditemukan!"
+            ls -la .build/next/ || true
             exit 1
           fi
 
-          cd .next/standalone
-          pkg server.js --targets node20-linux-x64 --output ../../dist/omniroute-linux
+          # Salin folder public dan static assets ke dalam folder standalone
+          if [ -d "public" ]; then
+            cp -r public .build/next/standalone/
+          fi
+
+          if [ -d ".build/next/static" ]; then
+            mkdir -p .build/next/standalone/.build/next
+            cp -r .build/next/static .build/next/standalone/.build/next/
+            mkdir -p .build/next/standalone/.next
+            cp -r .build/next/static .build/next/standalone/.next/
+          fi
+
+          # Kompilasi dari dalam folder .build/next/standalone ke folder dist
+          cd .build/next/standalone
+          pkg server.js --targets node20-linux-x64 --output ../../../dist/omniroute-linux
 
       # 9. Multi-threaded Tar Compression (pigz)
       - name: Package Binary & Assets
         run: |
-          mkdir -p dist/public dist/.next
+          mkdir -p dist/public dist/.build/next dist/.next
           if [ -d "public" ]; then cp -r public dist/; fi
-          if [ -d ".next/static" ]; then cp -r .next/static dist/.next/; fi
+          if [ -d ".build/next/static" ]; then
+            cp -r .build/next/static dist/.build/next/
+            cp -r .build/next/static dist/.next/
+          fi
 
           cd dist
-          tar -I pigz -cf ../omniroute-linux-v3.8.50.tar.gz omniroute-linux public .next 2>/dev/null || tar -I pigz -cf ../omniroute-linux-v3.8.50.tar.gz omniroute-linux .next
+          tar -I pigz -cf ../omniroute-linux-v3.8.50.tar.gz omniroute-linux public .build .next 2>/dev/null || tar -I pigz -cf ../omniroute-linux-v3.8.50.tar.gz omniroute-linux .build
 
       # 10. Upload Artifact
       - name: Upload Build Artifact
