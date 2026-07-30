@@ -1,14 +1,19 @@
-name: Build OmniRoute Binary (Linux)
+name: Release OmniRoute Binary (Linux)
 
 on:
   push:
-    branches: [ "main", "master" ]
+    tags:
+      - 'v*.*.*'
+      - 'Release/*'
+      - 'release/*'
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build Linux Binary
+  release:
+    name: Build & Publish Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Diberikan akses untuk mengunggah asset ke GitHub Release
 
     steps:
       - name: Checkout repository
@@ -48,9 +53,11 @@ jobs:
           cd dist
           tar -czvf ../omniroute-linux-x64.tar.gz omniroute-linux public .next
 
-      - name: Upload Build Artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: omniroute-linux-x64
-          path: omniroute-linux-x64.tar.gz
-          retention-days: 7
+          files: omniroute-linux-x64.tar.gz
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
