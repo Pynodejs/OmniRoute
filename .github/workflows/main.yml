@@ -1,19 +1,16 @@
-name: Release OmniRoute Binary (Linux)
+name: Build OmniRoute Binary (Linux)
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
-      - 'Release/*'
-      - 'release/*'
-  workflow_dispatch:
+    branches:
+      - 'release/v3.8.50' # Menjalankan workflow setiap ada push ke branch ini
+      - 'release/*'        # Optional: berlaku juga untuk branch release versi lainnya
+  workflow_dispatch:      # Memungkinkan pemicuan manual dari UI GitHub
 
 jobs:
-  release:
-    name: Build & Publish Release
+  build:
+    name: Build Linux Binary
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # Diberikan akses untuk mengunggah asset ke GitHub Release
 
     steps:
       - name: Checkout repository
@@ -51,13 +48,11 @@ jobs:
           cp -r .next/static dist/.next/
 
           cd dist
-          tar -czvf ../omniroute-linux-x64.tar.gz omniroute-linux public .next
+          tar -czvf ../omniroute-linux-v3.8.50.tar.gz omniroute-linux public .next
 
-      - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: omniroute-linux-x64.tar.gz
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: omniroute-linux-v3.8.50 # Nama file/folder artifact di GitHub Actions
+          path: omniroute-linux-v3.8.50.tar.gz
+          retention-days: 14            # Masa simpan artifact (bisa disesuaikan)
