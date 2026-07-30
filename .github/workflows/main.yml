@@ -1,4 +1,4 @@
-name: Fast Multi-threaded Build OmniRoute Binary (Linux - Node 24)
+name: Fast Multi-threaded Build OmniRoute Binary (Linux)
 
 on:
   push:
@@ -19,14 +19,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. TAMBAH SWAP SPACE 8GB (Mencegah Process Killed / OOM)
+      # 1. Tambah Swap Space 8GB (Menggunakan file terpisah agar tidak 'Text file busy')
       - name: Increase Swap Space
         run: |
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          echo "=== Memori & Swap Aktif ==="
+          sudo swapoff /swapfile_extra 2>/dev/null || true
+          sudo rm -f /swapfile_extra
+          sudo fallocate -l 8G /swapfile_extra || sudo dd if=/dev/zero of=/swapfile_extra bs=1M count=8192
+          sudo chmod 600 /swapfile_extra
+          sudo mkswap /swapfile_extra
+          sudo swapon /swapfile_extra
+          echo "=== Memori & Swap Berhasil Ditambahkan ==="
           free -h
 
       # 2. Setup Node.js 24 untuk Environment Build
@@ -57,7 +59,7 @@ jobs:
       - name: Install Dependencies
         run: npm ci --prefer-offline --no-audit
 
-      # 6. Build OmniRoute Release (Alokasi 6GB Heap + Swap)
+      # 6. Build OmniRoute Release (Alokasi Heap 6GB + Swap 8GB)
       - name: Build OmniRoute Release
         run: |
           CPU_CORES=$(nproc)
@@ -83,7 +85,6 @@ jobs:
           cp -r .next/static .next/standalone/.next/static
           
           cd .next/standalone
-          # target node20 digunakan agar PKG memakai prebuilt binary instan tanpa compile C++
           pkg server.js --targets node20-linux-x64 --output ../../dist/omniroute-linux
 
       # 9. Multi-threaded Tar Compression (pigz)
