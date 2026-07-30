@@ -19,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. Tambah Swap Space 8GB (Menggunakan file terpisah agar tidak 'Text file busy')
+      # 1. Tambah Swap Space 8GB
       - name: Increase Swap Space
         run: |
           sudo swapoff /swapfile_extra 2>/dev/null || true
@@ -59,7 +59,7 @@ jobs:
       - name: Install Dependencies
         run: npm ci --prefer-offline --no-audit
 
-      # 6. Build OmniRoute Release (Alokasi Heap 6GB + Swap 8GB)
+      # 6. Build OmniRoute Release
       - name: Build OmniRoute Release
         run: |
           CPU_CORES=$(nproc)
@@ -78,12 +78,29 @@ jobs:
       - name: Install PKG
         run: npm install -g @yao-pkg/pkg --prefer-offline
 
-      # 8. Compile Standalone Server (Pakai Prebuilt Target Node 20)
+      # 8. Compile Standalone Server (Aman & Terstruktur)
       - name: Compile Standalone Server to Binary
         run: |
-          cp -r public .next/standalone/public
-          cp -r .next/static .next/standalone/.next/static
+          # Buat direktori standalone terlebih dahulu
+          mkdir -p .next/standalone
           
+          # Salin public dan .next/static secara aman jika ada
+          if [ -d "public" ]; then
+            cp -r public .next/standalone/
+          fi
+          
+          if [ -d ".next/static" ]; then
+            mkdir -p .next/standalone/.next
+            cp -r .next/static .next/standalone/.next/
+          fi
+
+          # Verifikasi apakah server.js berhasil dibentuk oleh Next.js
+          if [ ! -f ".next/standalone/server.js" ]; then
+            echo "::error:: File .next/standalone/server.js tidak ditemukan!"
+            echo "Pastikan next.config.js / next.config.mjs di repo sudah memiliki opsi: output: 'standalone'"
+            exit 1
+          fi
+
           cd .next/standalone
           pkg server.js --targets node20-linux-x64 --output ../../dist/omniroute-linux
 
@@ -91,11 +108,11 @@ jobs:
       - name: Package Binary & Assets
         run: |
           mkdir -p dist/public dist/.next
-          cp -r public dist/
-          cp -r .next/static dist/.next/
+          if [ -d "public" ]; then cp -r public dist/; fi
+          if [ -d ".next/static" ]; then cp -r .next/static dist/.next/; fi
 
           cd dist
-          tar -I pigz -cf ../omniroute-linux-v3.8.50.tar.gz omniroute-linux public .next
+          tar -I pigz -cf ../omniroute-linux-v3.8.50.tar.gz omniroute-linux public .next 2>/dev/null || tar -I pigz -cf ../omniroute-linux-v3.8.50.tar.gz omniroute-linux .next
 
       # 10. Upload Artifact
       - name: Upload Build Artifact
