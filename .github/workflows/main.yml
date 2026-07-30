@@ -19,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. Tambah Swap Space 8GB (Mencegah Process Killed / OOM)
+      # 1. TAMBAH SWAP SPACE 8GB (Mencegah Process Killed / OOM)
       - name: Increase Swap Space
         run: |
           sudo swapoff /swapfile_extra 2>/dev/null || true
@@ -38,13 +38,13 @@ jobs:
           node-version: '24'
           cache: 'npm'
 
-      # 3. Install Parallel Tools (pigz)
-      - name: Install Parallel Tools (pigz)
+      # 3. INSTALL GCC-10 & G++-10 (Kunci utama kompatibilitas GLIBCXX lama)
+      - name: Install Legacy GCC 10 Compiler & Pigz
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq pigz
+          sudo apt-get install -y -qq gcc-10 g++-10 pigz
 
-      # 4. OPTIMIZED CACHE STRATEGY (Next.js, SWC/Compiler, & PKG Cache)
+      # 4. FULL MULTI-LAYER CACHE (Next.js, Compiler, & PKG Cache)
       - name: Cache Next.js Build & PKG Runtimes
         uses: actions/cache@v4
         with:
@@ -52,22 +52,28 @@ jobs:
             .build/next/cache
             node_modules/.cache
             ~/.pkg-cache
-          # github.sha memastikan cache SELALU ter-update & disimpan di setiap run
-          key: ${{ runner.os }}-omniroute-build-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
+          key: ${{ runner.os }}-omniroute-gcc10-${{ hashFiles('**/package-lock.json') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-omniroute-build-${{ hashFiles('**/package-lock.json') }}-
-            ${{ runner.os }}-omniroute-build-
+            ${{ runner.os }}-omniroute-gcc10-${{ hashFiles('**/package-lock.json') }}-
+            ${{ runner.os }}-omniroute-gcc10-
 
-      # 5. Fast Install Dependencies
-      - name: Install Dependencies
+      # 5. Fast Install Dependencies menggunakan Compiler GCC 10
+      - name: Install Dependencies with GCC 10
+        env:
+          CC: gcc-10
+          CXX: g++-10
         run: npm ci --prefer-offline --no-audit
 
       # 6. Build OmniRoute Release
       - name: Build OmniRoute Release
+        env:
+          CC: gcc-10
+          CXX: g++-10
         run: |
           CPU_CORES=$(nproc)
           
           echo "Node version: $(node -v)"
+          echo "Compiler C++: $(g++-10 --version | head -n 1)"
           echo "Alokasi Heap Node.js: 6144 MB (6GB) + 8GB Swap"
           echo "CPU Cores terdeteksi: ${CPU_CORES}"
           
