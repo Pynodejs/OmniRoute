@@ -3,9 +3,8 @@ name: Build OmniRoute Binary (Linux)
 on:
   push:
     branches:
-      - 'release/v3.8.50' # Menjalankan workflow setiap ada push ke branch ini
-      - 'release/*'        # Optional: berlaku juga untuk branch release versi lainnya
-  workflow_dispatch:      # Memungkinkan pemicuan manual dari UI GitHub
+      - 'release/v3.8.50'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,32 +15,37 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Install Native Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3 libsecret-1-dev
+
+      - name: Setup Node.js (v22)
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: '22'
           cache: 'npm'
 
       - name: Install Dependencies
         run: npm ci
 
-      - name: Build Next.js App
-        run: npm run build
-
-      - name: Copy Static Assets to Standalone
-        run: |
-          cp -r public .next/standalone/public
-          cp -r .next/static .next/standalone/.next/static
+      - name: Build OmniRoute Release
+        run: npm run build:release
 
       - name: Install PKG
         run: npm install -g @yao-pkg/pkg
 
-      - name: Compile to Linux Binary
+      - name: Compile Standalone Server to Binary
         run: |
+          # Menyalin asset statis ke folder standalone Next.js
+          cp -r public .next/standalone/public
+          cp -r .next/static .next/standalone/.next/static
+          
+          # Compile standalone server.js
           cd .next/standalone
-          pkg server.js --targets node20-linux-x64 --output ../../dist/omniroute-linux
+          pkg server.js --targets node22-linux-x64 --output ../../dist/omniroute-linux
 
-      - name: Package Binary with Assets (.tar.gz)
+      - name: Package Binary & Assets (.tar.gz)
         run: |
           mkdir -p dist/public dist/.next
           cp -r public dist/
@@ -53,6 +57,6 @@ jobs:
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: omniroute-linux-v3.8.50 # Nama file/folder artifact di GitHub Actions
+          name: omniroute-linux-v3.8.50
           path: omniroute-linux-v3.8.50.tar.gz
-          retention-days: 14            # Masa simpan artifact (bisa disesuaikan)
+          retention-days: 14
